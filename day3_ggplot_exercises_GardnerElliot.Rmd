@@ -1,0 +1,158 @@
+## Day 3, part 3: ggplot - Exercises
+
+This document contains the instructions for exercises during the Day 3: ggplot session, drawn from the slides. Suggested answers are included in the [slides](https://msia.github.io/bootcamp-2018/lectureslides/day3_R-ggplot_slides_kr#/).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) #changing this to false will hide the code when the markdown is made into the HTML document, only the results of the code
+```
+
+```{r}
+source(here::here("data/day3_objects.R"))
+```
+
+### Exercise 1: Scatterplot
+
+Using the gapminder07 data, create a scatterplot of the natural log of `gdpPercap` as a function of the natural log of `pop`. Give it a title and axis labels.
+
+Remember, you will need three functions: `ggplot()`, `geom_point()`, and `labs()`.
+
+```{r}
+ggplot(data = gapminder07) +
+  geom_point(mapping = aes(x = gdpPercap, y = lifeExp))
+```
+
+```{r}
+ggplot(gapminder07) +
+  geom_point(aes(x = gdpPercap, y = lifeExp)) +
+  labs(title = "Relationship between life expectancy and GDP per Capita")
+```
+
+```{r}
+ggplot(gapminder07) +
+  geom_point(aes(x = log(pop), y = log(gdpPercap))) +
+  labs(title = "GDP per Capita by Population", x = "Log of GDP Per Capita", y = "Log of Population")
+```
+
+```{r}
+long_gen %>%
+  group_by(datetime) %>%
+  summarise(output = sum(output)) %>%
+  ggplot() +
+  geom_col(aes(x = datetime, y = output)) +
+  labs(title= "Total energy generated, by hour", x = "Hour", y= "Output(MW)")
+```
+
+### Exercise 2: Hydro power generated over time
+
+Task: Plot a column chart hydroelectric power generated over time.
+
+Hint: There are two types of hydroelectric sources in the data: `large_hydro` and `small_hydro`.
+
+```{r}
+mutate(generation, total_hydro = large_hydro + small_hydro) %>%
+  select(datetime, total_hydro) %>%
+  ggplot() +
+  geom_col(aes(x = datetime, y = total_hydro)) +
+  labs(title = "Total Hydroelectric Power Generation over Time", x = "Hour", y= "Power")
+```
+
+```{r}
+imports %>%
+  ggplot() +
+  geom_line(aes(x=datetime, y = imports), size = 1.2, col = "red") +
+  labs(title = "energy imports over time", x = "date", y="power")
+```
+```{r}
+generation %>%
+  ggplot() +
+  geom_area(aes(x = datetime, y = wind), fill = "blue")
+```
+
+```{r}
+long_gen %>%
+  ggplot() +
+  geom_boxplot(aes(x=source, y = output))
+```
+```{r}
+generation %>%
+  ggplot() +
+  geom_line(aes(x=datetime, y=large_hydro), col="turquoise3") +
+            geom_smooth(aes(x=datetime, y=large_hydro), col = "red")
+```
+
+
+### Exercise 3: Total output per source
+
+Task: Create a column chart that shows the total output per source.
+
+- Change the color of the columns to `"darkred"`.
+- Add a horizontal line indicating the mean output across all sources. Use the cheatsheet to identify the `geom` function that you need.
+- Add a meaningful title and axis labels using `labs()`.
+
+```{r}
+group_by(long_gen, source) %>%
+  summarise(total_output = sum(output)) %>%
+  ggplot() +
+  geom_col(aes(x=source, y=total_output), fill="darkred") +
+  geom_hline(aes(yintercept = mean(total_output)), col="blue") +
+  labs(title="Total Output By Source", x="Source", y="Output (MW)") +
+  theme_minimal()
+```
+
+### Exercise 4: Colors and fill
+
+Task: Create a line plot that compares generation of wind, solar, and geothermal energy over time.
+
+Bonus: Set the line size to 1.5.
+
+```{r}
+filter(long_merged_energy, (source == "wind") | (source == "solar") | (source == "geothermal")) %>%
+  ggplot() +
+  geom_line(aes(x = datetime, y = output ,group = source, col=source), size = 1.5) +
+  scale_color_brewer(palette="Accent", name="Energy source") +
+  labs(title = "Geothermal vs Solar vs Wind Power over Time", x="Time", y="Output (MW)")
+```
+
+### Exercise 5: Average hourly output by source
+
+Task: Visualize the average output for each hour of the day, grouped by source.
+
+Hint: You need to identify the output per source per hour (e.g. 01:00, 02:00, etc) averaged over all days.
+
+- You will need to prepare your data using both `dplyr` and `lubridate` functions.
+- You can choose which `geom`(s) to use, and how to demarcate groups.
+- Bonus: use a scale layer to set a color palette (try `"Set3"`) and change the legend name.
+- Remember to add `labs()`!
+
+```{r}
+library(lubridate)
+long_merged_energy %>%
+  merge(regroup, by.x = "source", by.y="type") %>%
+  mutate(hr = hour(datetime)) %>%
+  group_by(group,hr)%>%
+  summarize(average_output = mean(output)) %>%
+  ggplot() +
+    geom_line(aes(x=hr,y=average_output, group=group, col=group), size = 1.5)+
+    scale_color_brewer(palette="Set3",name="Type of Energy Source")+
+    theme_dark()+
+    labs(title = "Average Hourly Output by Type of Energy Source", x="Hour", y="Output (MW)")
+
+```
+
+### Exercise 6: Facets
+
+Task: Compare generation patterns for each source in facets. Color the lines using the "group" variable in `regroup`.
+
+Remember:
+- You will need to prepare your data. Think about the variables that you need: source/type, output, and group.
+- When you pipe modified data into ggplot, remember that you are grouping in two ways: source/type through facets, and group through color.
+
+```{r}
+long_merged_energy %>%
+  merge(regroup, by.x = "source", by.y = "type") %>%
+  ggplot()+
+    geom_line(aes(x=datetime, y=output, group = source, col=group)) +
+    facet_wrap(~source, scales = "free") +
+    labs(title = "Power Generation by Type over Time", x = "Time", y="Output (MW)")
+```
+
