@@ -1,0 +1,104 @@
+---
+title: "Day_3_R"
+author: "Elliot Gardner"
+date: "9/19/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) #changing this to false will hide the code when the markdown is made into the HTML document, only the results of the code
+```
+
+## Import Data
+
+```{r}
+library(readr)
+#gen_data <- read_csv(here::here("data","generation.csv"))
+gen_data <- read.csv(here::here("data","generation.csv"), stringsAsFactors = FALSE)
+head(gen_data)
+str(gen_data)
+summary(gen_data)
+
+library(lubridate) #using lubridate to change character dates from read.csv (versus read_csv from readr) into POSIXct format dates
+gen_data$datetime <- as_datetime(gen_data$datetime)
+class(gen_data$datetime)
+head(gen_data)
+
+imp_data <- read_csv(here::here("data","imports.csv"))
+head(imp_data)
+str(imp_data)
+summary(imp_data)
+```
+
+## Using reshape2
+
+```{r}
+library(reshape2)
+long_gen <- melt(gen_data, id.vars = "datetime", variable.name = "source", value.name = "usage")
+# this converts the data into one super long spreadsheet. All non-specified columns in id.vars vector are turned into additional rows according to the variable.name and value.name specifications. The column headings are the variables, the values in the cells are the values.
+head(long_gen)
+```
+
+## Merging data
+
+```{r}
+merge_data <- merge(long_gen, imp_data, by = "datetime")
+
+merge_exp <- merge(gen_data, imp_data, by="datetime")
+merge_exp_long <- melt(merge_exp, id.vars = "datetime", variable.name = "source", value.name = "usage")
+```
+
+## Using dplyr
+
+```{r}
+library(dplyr)
+tmp <- select(merge_exp, biogas, biomass, geothermal, solar)
+names(tmp)
+
+tmp<- select(merge_exp, -imports, -wind)
+names(tmp)
+
+tmp <- filter(merge_exp, imports > 7000)
+nrow(tmp)
+
+tmp <- filter(merge_exp, imports > 7000 | natural_gas < 7000) #use ',' between arguments for AND, use '|' between arguments for OR
+nrow(tmp)
+head(tmp)
+
+tmp <- mutate(merge_exp_long, log_usage = log(usage))
+head(tmp)
+
+tmp <- mutate(merge_exp_long, log_usage = log(usage), usage_2 = usage **2)
+head(tmp)
+
+summarize(merge_exp_long, total = sum(usage, na.rm = T))
+summarize(merge_exp_long, mean_cons = mean(usage, na.rm = T))
+
+#once you've started with a data frame into a pipe sequence, you don't have to use it again
+merge_exp_long %>% 
+  filter(source == 'geothermal') %>% 
+  select(-datetime) %>% 
+  mutate(log_usage = log(usage)) %>% 
+  summarize(mean_log_usage = mean(mean(log_usage, na.rm = T)))
+
+# to refer to an implicit dataframe within a pipe, use "."
+merge_exp %>%
+  select(-datetime) %>%
+  mutate(total_usage = rowSums(., na.rm = T)) %>%
+  summarize(total_usage = sum(total_usage, na.rm = T))
+
+merge_exp %>%
+  select(contains("hydro")) %>%
+  mutate(total_hydro = rowSums(., na.rm = T)) %>%
+  summarize(mean_hydro = mean(total_hydro, na.rm = T))
+
+merge_exp_long %>%
+  group_by(source) %>%
+  summarize(sum_usage = sum(usage, na.rm = T))
+
+merge_exp %>%
+  select(datetime,small_hydro, large_hydro, biogas, biomass) %>%
+  melt(.,id.vars = "datetime", variable.name = "source", value.name = "usage") %>%
+  group_by(source) %>%
+  summarize(mean_usage = mean(usage, na.rm = T))
+```
