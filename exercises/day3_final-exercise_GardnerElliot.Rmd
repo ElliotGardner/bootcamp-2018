@@ -1,0 +1,165 @@
+# MSIA Boot Camp - Final R exercise
+
+You've learned quite a lot about R in a short time. Congratulations! This exercise is designed to give you some additional practice on the material we have discussed this week while the lectures are still fresh in your mind, and to integrate different tools and skills that you have learned.
+
+## Instructions
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) #changing this to false will hide the code when the markdown is made into the HTML document, only the results of the code
+```
+
+#### Task 1: Import your data 
+
+Read the data files `nys_schools.csv` and `nys_acs.csv` into R. These data come from two different sources: one is data on *schools* in New York state from the [New York State Department of Education](http://data.nysed.gov/downloads.php), and the other is data on *counties* from the American Communities Sruvey from the US Census Bureau. Review the codebook file so that you know what each variable name means in each dataset. 
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+nys_schools <- read_csv(here::here("data","nys_schools.csv"))
+acs_counties <- read_csv(here::here("data","nys_acs.csv"))
+
+```
+
+#### Task 2: Explore your data
+
+Getting to know your data is a critical part of data analysis. Take the time to explore the structure of the two dataframes you have imported. What types of variables are there? Is there any missing data? How can you tell? What else do you notice about the data?
+
+```{r}
+str(nys_schools)
+head(nys_schools)
+dim(nys_schools)
+summary(nys_schools)
+
+str(acs_counties)
+head(acs_counties)
+dim(acs_counties)
+summary(acs_counties)
+```
+
+Variables deal with various demographic facts for both school districts and for counties in New York. Looking at the summary statistics for the data points, some have values of -99, which is a placeholder for a missing value, though there isn't any missing data for the ACS survey, only for the NYS schools data.
+
+#### Task 3: Recoding and variable manipulation
+
+1. Deal with missing values, which are currently coded as `-99`.
+
+```{r}
+dim(nys_schools)
+nys_clean <- filter(nys_schools, !(total_enroll == -99.0 | per_free_lunch == -99.0000 | per_reduced_lunch == -99.00000 | per_lep == -99.00000 | mean_ela_score == -99.0 | mean_math_score == -99.0 | region == "-99"))
+dim(nys_clean)
+
+#nys_schools[nys_schools == -99] <- NA would replace -99 with NA
+```
+2. Create a categorical variable that groups counties into "high", "medium", and "low" poverty groups. Decide how you want to split up the groups and briefly explain your decision. 
+
+```{r}
+lower_quart <- mean(acs_counties$county_per_poverty) - sd(acs_counties$county_per_poverty)
+upper_quart <- mean(acs_counties$county_per_poverty) + sd(acs_counties$county_per_poverty)
+
+for (i in 1:nrow(acs_counties)) {
+  if (acs_counties[i,"county_per_poverty"] > upper_quart) {
+    acs_counties[i,"poverty"] = "high"
+  } else if (acs_counties[i, "county_per_poverty"] >= lower_quart) {
+    acs_counties[i,"poverty"] = "medium"
+  } else {
+    acs_counties[i,"poverty"] = "low"
+  }
+}
+```
+
+I grouped based on being one standard deviation about or below the mean value for the county_per_poverty. Those one SD above were high pvoerty, those one SD below were low.
+
+3. The tests that the NYS Department of Education administers changes from time to time, so scale scores are not directly comparable year-to-year. Create a new variable that is the standardized z-score for math and English Language Arts (ELA) for each year (hint: group by year and use the `scale()` function)
+
+```{r}
+nys_clean_std <- nys_clean %>%
+  group_by(year) %>%
+  mutate(scaled_math = as.vector(scale(mean_math_score))) %>%
+  mutate(scaled_ela = as.vector(scale(mean_ela_score)))
+
+```
+
+#### Task 4: Merge datasets
+
+Create a county-level dataset that merges variables from the schools dataset and the ACS dataset. Remember that you have learned multiple approaches on how to do this, and that you will have to decide how to summarize data when moving from the school to the county level.
+
+```{r}
+nys_counties <- nys_clean_std %>%
+  group_by(county_name,year) %>%
+  summarize(county_enroll = sum(total_enroll), num_free_lunch = floor(sum(total_enroll*per_free_lunch)), num_reduced_lunch = floor(sum(total_enroll*per_reduced_lunch)), num_lep = floor(sum(total_enroll*per_lep)), mean_ela_score = mean(mean_ela_score), scaled_ela = mean(scaled_ela), mean_math_score = mean(mean_math_score), scaled_math = mean(scaled_math))
+
+county_schools <- acs_counties %>%
+  merge(nys_counties, by = c("county_name","year"))
+              
+```
+
+#### Task 5: Create summary tables
+
+Generate tables showing the following:
+
+1. For each county: total enrollment, percent of students qualifying for free or reduced price lunch, and percent of population in poverty.
+```{r}
+county_schools_expanded <- county_schools %>%
+  mutate(per_lunch = (num_free_lunch + num_reduced_lunch)/county_enroll)
+  
+select(county_schools_expanded, county_name, year, county_enroll, per_lunch, county_per_poverty)
+```
+
+2. For the counties with the top 5 and bottom 5 poverty rate: percent of population in poverty, percent of students qualifying for free or reduced price lunch, mean reading score, and mean math score.
+
+```{r}
+ranked_county_schools <- county_schools_expanded[order(county_schools_expanded$county_per_poverty),]
+top5_county_schools <- ranked_county_schools[1:5,c("county_name","year","county_per_poverty","per_lunch","scaled_ela","scaled_math")]
+top5_county_schools
+bottom5_county_schools <- ranked_county_schools[492:496,c("county_name","year","county_per_poverty","per_lunch","scaled_ela","scaled_math")]
+bottom5_county_schools
+```
+  
+
+#### Task 6: Data visualization
+
+Using `ggplot2`, visualize the following:
+
+1. The relationship between access to free/reduced price lunch and test performance, at the *school* level.
+```{r}
+nys_clean_std %>%
+  filter(!((per_free_lunch + per_reduced_lunch)>1)) %>%
+  ggplot() +
+  geom_point(aes(x=(per_free_lunch + per_reduced_lunch), y=(scaled_math + scaled_ela)), size = .02)+
+  facet_wrap(~year, scale="free") +
+  labs(title = "Test Performance Based on Students Receiving Free/Reduced Lunch", x="Portion Receiving Reduced Lunch", y="Scaled Test Performance in Aggregate")
+```
+
+2. Average test performance across *counties* with high, low, and medium poverty.
+
+```{r}
+county_schools_expanded %>%
+  filter(!((per_lunch)>1)) %>%
+  group_by(poverty, county_per_poverty) %>%
+  summarize(total_scaled_score = mean(scaled_ela + scaled_math)) %>%
+  ggplot() +
+  geom_point(aes(x=county_per_poverty,y=total_scaled_score)) +
+  facet_wrap(~poverty)
+```
+
+#### Task 7: Answering questions
+
+Using the skills you have learned in the past three days, tackle the following question: 
+
+> What can the data tell us about the relationship between poverty and test performance in New York public schools? Has this relationship changed over time? Is this relationship at all moderated by access to free/reduced price lunch?
+
+You may use summary tables, statistical models, and/or data visualization in pursuing an answer to this question. Feel free to build on the tables and plots you generated above in Tasks 5 and 6.
+
+Given the short time period, any answer will of course prove incomplete. The goal of this task is to give you some room to play around with the skills you've just learned. Don't hesitate to try something even if you don't feel comfortable with it yet. Do as much as you can in the time allotted.
+
+## Github submission
+
+When you have completed the exercise, save your Markdown file in the `submissions` folder of your forked repo using this naming convention: `FinalRExercise_LastnameFirstname.Rmd`. Commit changes periodically, and push commits when you are done.
+
+You can optionally create a pull request to submit this file (and other exercise files from the bootcamp sessions) to the base repo that lives in the MSiA organization. If you would like to do this, make sure that all new files you have created are in the `submissions` folder, and then create a pull request that asks to merge changes from your forked repo to the base repo. 
+
+## Reminders
+
+- Remember to **load necessary packages**.
+- Remember to **comment extensively** in your code. Since you will be working in an RMarkdown file, you can describe your workflow in the text section. But you should also comment within all of your code chunks.
+- Attempt to knit your Markdown file into HTML format before committing it to Github. Troubleshoot any errors with the knit process by checking the lines referred to in the error messages.
